@@ -13,7 +13,7 @@
         "aarch64-darwin"
         "x86_64-darwin"
       ];
-      perSystem = {pkgs,...}: {
+      perSystem = {pkgs,self', ...}: {
         packages.default = pkgs.writeShellApplication {
           name="alarm-install";
           runtimeInputs = [pkgs.fzf];
@@ -22,7 +22,7 @@
         devShells.default = pkgs.mkShell {
           name="alarm-install-devshell";
           meta.description = "Shell environment for alarm_install script";
-          packages = with pkgs;[fzf];
+          packages = [pkgs.fzf self'.packages.default];
         };
       };
     };
