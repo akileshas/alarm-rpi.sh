@@ -15,10 +15,19 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_NAME="$(basename "${0}")"
 readonly ARCHLINUXARM="http://os.archlinuxarm.org/os/ArchLinuxARM-rpi-aarch64-latest.tar.gz"
 readonly LINUX_RPI_REPO="http://mirror.archlinuxarm.org/aarch64/core/"
-readonly DOWNLOAD_DIR=/tmp/archlinuxarm/
-readonly LINUX_RPI_DIR="${DOWNLOAD_DIR}/linux-rpi/"
+readonly DOWNLOAD_DIR="/tmp/archlinuxarm"
+readonly LINUX_RPI_DIR="${DOWNLOAD_DIR}/linux-rpi"
+readonly LINUX_RPI_APK_DIR="${LINUX_RPI_DIR}/apk"
+readonly LINUX_RPI_EXTRACT_DIR="${LINUX_RPI_DIR}/extract"
 readonly ROOTFS="${DOWNLOAD_DIR}/ArchLinuxARM-rpi-aarch64-latest.tar.gz"
-readonly MOUNTPOINT=/mnt/alarm/
+readonly MOUNTPOINT="/mnt/alarm"
+
+DISK_DEV=""
+DISK_PART_BOOT=""
+DISK_PART_ROOT=""
+LINUX_RPI=""
+LINUX_RPI_APK=""
+LINUX_RPI_APK_EXTRACT=""
 
 _M.export.help () {
     cat << EOF | sed 's/\\n/\n/g'
@@ -222,6 +231,7 @@ __M.check.pkgs () {
                 __logger.success "\b(pkgs)(${bin}) check: passed after install."
             else
                 __logger.error "\b(pkgs)(${bin}) still missing after attempted install."
+                return 1
             fi
         fi
     done
@@ -277,7 +287,8 @@ __M.util.get_linux_rpi () {
     pkgs=$(echo "${response}" \
         | grep -oE "linux-rpi-[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-aarch64\.pkg\.tar\.[gx]z" \
         | sort -V \
-        | uniq)
+        | uniq \
+        | tail -n1)
     if [[ -z "${pkgs}" ]]; then
         echo "none"
         return 1
@@ -306,9 +317,9 @@ __M.util.cleanup () {
     __logger.info "cleaning up ..."
     if ! __util.is_excluded "umount" "${exclude_list[@]}"; then
         if ! sudo umount -R "${MOUNTPOINT}" 2>/dev/null; then
-            __logger.warn "failed to unmount filesystems."
+            __logger.warn "failed to unmount filesystems under '${MOUNTPOINT}'."
         else
-            __logger.info "unmounted the filesystems."
+            __logger.info "unmounted all filesystems under '${MOUNTPOINT}'."
         fi
     fi
     __logger.info "cleaning up ... done."
@@ -331,31 +342,23 @@ __M.install.setup () {
     if [[ "${standalone_call}" == true ]]; then
         __logger.info "setting up archlinuxarm installation ..."
     fi
-    readonly SD_DEV="$(__M.util.get_disk)"
-    if [[ "${SD_DEV}" == "none" ]]; then
+    DISK_DEV="$(__M.util.get_disk)"
+    if [[ "${DISK_DEV}" == "none" ]]; then
         __logger.error "no disk selected."
         return 1
     fi
-    readonly SD_PART_BOOT="${SD_DEV}p1"
-    readonly SD_PART_ROOT="${SD_DEV}p2"
-    __logger.info "disk selected: ${SD_DEV}."
-    __logger.info "boot partition: ${SD_PART_BOOT}."
-    __logger.info "root partition: ${SD_PART_ROOT}."
+    readonly DISK_PART_BOOT="${DISK_DEV}p1"
+    readonly DISK_PART_ROOT="${DISK_DEV}p2"
+    __logger.info "disk selected: ${DISK_DEV}."
+    __logger.info "boot partition: ${DISK_PART_BOOT}."
+    __logger.info "root partition: ${DISK_PART_ROOT}."
     __logger.info "creating download directory ..."
     if ! mkdir -p "${DOWNLOAD_DIR}"; then
         __logger.error "failed to create download directory: ${DOWNLOAD_DIR}"
         return 1
     fi
     __logger.info "creating download directory ... done."
-    __logger.info "switching cwd ..."
-    if cd "${DOWNLOAD_DIR}"; then
-        __logger.info "switched cwd: '$(pwd)'."
-    else
-        __logger.error "failed switching to '${DOCUMENTATION_URL}' directory."
-        return 1
-    fi
-    __logger.info "switching cwd ... done."
-    if [[ -f "${ROOTFS}" && -s "${ROOTFS}" ]]; then
+    if [[ -f "${ROOTFS}" && -s "/${ROOTFS}" ]]; then
         __logger.info "found cached rootfs: ${ROOTFS} ($(du -h "${ROOTFS}" | cut -f1))"
         if bsdtar -tf "${ROOTFS}" &>/dev/null; then
             local confirm
@@ -384,7 +387,7 @@ __M.install.setup () {
     if [[ ! -f "${ROOTFS}" ]]; then
         __logger.info "downloading archlinuxarm ..."
         if ! ( aria2c -x 16 -s 16 -k 1M \
-                -o "ArchLinuxARM-rpi-aarch64-latest.tar.gz" \
+                -o "${ROOTFS}" \
                 "${ARCHLINUXARM}" ); then
             __logger.error "failed to download archlinuxarm."
             return 1
@@ -396,14 +399,16 @@ __M.install.setup () {
     if [[ "${user}" == "root" ]]; then
         __logger.info "running as '${user}' user."
     else
+        __logger.info "getting sudo access ..."
         if sudo -v; then
             __logger.success "\b(sudo) verification: passed."
         else
             __logger.error "\b(sudo) verification: failed."
             return 1
         fi
+        __logger.info "getting sudo access ... done."
     fi
-    __logger.warn "disk selected: ${SD_DEV}."
+    __logger.warn "disk selected: ${DISK_DEV}."
     local confirm
     read -rp ">>> wipe this disk and create new partition table? [y/N]: " confirm
     confirm="${confirm,,}"
@@ -411,30 +416,30 @@ __M.install.setup () {
         __logger.error "disk wipe cancelled."
         return 1
     fi
-    __logger.info "wiping sd card ..."
-    if ! ( sudo wipefs -a "${SD_DEV}" && sudo parted -s "${SD_DEV}" mklabel gpt); then
-        __logger.error "failed to wip the sd card."
+    __logger.info "wiping the disk ..."
+    if ! ( sudo wipefs -a "${DISK_DEV}" && sudo parted -s "${DISK_DEV}" mklabel gpt); then
+        __logger.error "failed to wip the disk."
         return 1
     fi
-    __logger.info "wiping sd card ... done."
-    __logger.info "partitioning sd card ..."
-    if ! ( sudo parted -s "${SD_DEV}" \
+    __logger.info "wiping the disk ... done."
+    __logger.info "partitioning the disk ..."
+    if ! ( sudo parted -s "${DISK_DEV}" \
                 mkpart primary fat32 1MiB 1025MiB \
                 set 1 boot on \
                 set 1 esp on \
                 mkpart primary ext4 1025MiB 100% ); then
-        __logger.error "failed to partition sd card."
+        __logger.error "failed to partition disk."
         return 1
     fi
-    __logger.info "partitioning sd card ... done."
+    __logger.info "partitioning the disk ... done."
     __logger.info "formatting boot partition ..."
-    if ! sudo mkfs.vfat -F 32 "${SD_PART_BOOT}"; then
+    if ! sudo mkfs.vfat -F 32 "${DISK_PART_BOOT}"; then
         __logger.error "failed to format boot partition."
         return 1
     fi
     __logger.info "formatting boot partition ... done."
     __logger.info "formatting root partition ..."
-    if ! sudo mkfs.ext4 -E lazy_itable_init=0,lazy_journal_init=0 -F "${SD_PART_ROOT}"; then
+    if ! sudo mkfs.ext4 -E lazy_itable_init=0,lazy_journal_init=0 -F "${DISK_PART_ROOT}"; then
         __logger.error "failed to format root partition."
         return 1
     fi
@@ -446,7 +451,7 @@ __M.install.setup () {
     fi
     __logger.info "creating root mount directory ... done."
     __logger.info "mounting root partition ..."
-    if ! sudo mount "${SD_PART_ROOT}" "${MOUNTPOINT}"; then
+    if ! sudo mount "${DISK_PART_ROOT}" "${MOUNTPOINT}"; then
         __logger.error "failed to mount root partition."
         return 1
     fi
@@ -459,14 +464,14 @@ __M.install.setup () {
     fi
     __logger.info "creating boot mount directory ... done."
     __logger.info "mounting boot partition ..."
-    if ! sudo mount "${SD_PART_BOOT}" "${MOUNTPOINT}/boot"; then
+    if ! sudo mount "${DISK_PART_BOOT}" "${MOUNTPOINT}/boot"; then
         __logger.error "failed to mount boot partition."
         __M.util.cleanup
         return 1
     fi
     __logger.info "mounting boot partition ... done."
     __logger.info "extracting archlinuxarm ..."
-    if ! sudo bsdtar -xpf "${DOWNLOAD_DIR}/ArchLinuxARM-rpi-aarch64-latest.tar.gz" -C "$MOUNTPOINT"; then
+    if ! sudo bsdtar -xpf "${ROOTFS}" -C "$MOUNTPOINT"; then
         __logger.error "failed to extract archlinuxarm."
         __M.util.cleanup
         return 1
@@ -480,21 +485,22 @@ __M.install.setup () {
     fi
     __logger.info "removing u-boot ... done."
     __logger.info "creating linux-rpi directories ..."
-    if ! mkdir  -p "${LINUX_RPI_DIR}/apk/" "${LINUX_RPI_DIR}/extract/"; then
-        __logger.error "failed to create linux-rpi directories: ${LINUX_RPI_DIR}/apk/, ${LINUX_RPI_DIR}/extract/"
+    if ! mkdir  -p "${LINUX_RPI_APK_DIR}" "${LINUX_RPI_EXTRACT_DIR}"; then
+        __logger.error "failed to create linux-rpi directories: ${LINUX_RPI_APK_DIR}, ${LINUX_RPI_EXTRACT_DIR}."
         __M.util.cleanup
         return 1
     fi
     __logger.info "creating linux-rpi directories ... done."
-    readonly LINUX_RPI="$(__M.util.get_linux_rpi)"
+    LINUX_RPI="$(__M.util.get_linux_rpi)"
     if [[ "${LINUX_RPI}" == "none" ]]; then
         __logger.error "no linux-rpi packages found at '${LINUX_RPI_REPO}'."
         __M.util.cleanup
         return 1
     fi
-    if [[ -f "${LINUX_RPI_DIR}/apk/${LINUX_RPI}" && -s "${LINUX_RPI_DIR}/apk/${LINUX_RPI}" ]]; then
-        __logger.info "found cached linux-rpi kernel package: ${LINUX_RPI}"
-        if tar -tf "${LINUX_RPI_DIR}/apk/${LINUX_RPI}" &>/dev/null; then
+    LINUX_RPI_APK="${LINUX_RPI_APK_DIR}/${LINUX_RPI}"
+    if [[ -f "${LINUX_RPI_APK}" && -s "${LINUX_RPI_APK}" ]]; then
+        __logger.info "found cached linux-rpi kernel package: ${LINUX_RPI}."
+        if tar -tf "${LINUX_RPI_APK}" &>/dev/null; then
             local confirm
             read -rp ">>> use cached linux-rpi kernel package '${LINUX_RPI}'? [y/N]: " confirm
             confirm="${confirm,,}"
@@ -502,7 +508,7 @@ __M.install.setup () {
                 __logger.info "using cached linux-rpi kernel package."
             else
                 __logger.info "discarding cache ..."
-                if ! rm -f "${LINUX_RPI_DIR}/apk/${LINUX_RPI}"; then
+                if ! rm -f "${LINUX_RPI_APK}"; then
                     __logger.error "failed to discard the cache."
                     __M.util.cleanup
                     return 1
@@ -512,7 +518,7 @@ __M.install.setup () {
         else
             __logger.warn "cache is corrupted."
             __logger.info "discarding cache ..."
-            if ! rm -f "${LINUX_RPI_DIR}/apk/${LINUX_RPI}"; then
+            if ! rm -f "${LINUX_RPI_APK}"; then
                 __logger.error "failed to discard the cache."
                 __M.util.cleanup
                 return 1
@@ -520,20 +526,22 @@ __M.install.setup () {
             __logger.info "discarding cache ... done."
         fi
     fi
-    if [[ ! -f "${LINUX_RPI_DIR}/apk/${LINUX_RPI}" ]]; then
+    if [[ ! -f "${LINUX_RPI_APK}" ]]; then
         __logger.info "downloading linux-rpi kernel ..."
         if ! ( aria2c -x 16 -s 16 -k 1M \
-                -o "${LINUX_RPI_DIR}/apk/${LINUX_RPI}" \
+                -o "${LINUX_RPI_APK}" \
                 "${LINUX_RPI_REPO}/${LINUX_RPI}" ); then
-            __logger.error "failed to download archlinuxarm."
+            __logger.error "failed to download linux-rpi kernel."
             __M.util.cleanup
             return 1
         fi
         __logger.info "downloading linux-rpi kernel ... done."
     fi
-    if [[ -d "${LINUX_RPI_DIR}/extract/boot" ]]; then
+    LINUX_RPI_APK_EXTRACT="${LINUX_RPI_EXTRACT_DIR}/${LINUX_RPI}"
+    __logger.info "creating extracting directory ... "
+    if [[ -d "${LINUX_RPI_APK_EXTRACT}" && -d "${LINUX_RPI_APK_EXTRACT}/boot" ]]; then
         __logger.info "found extracted linux-rpi kernel '/boot' directory."
-        if ls "${LINUX_RPI_DIR}/extract/boot/kernel*.img" &>/dev/null; then
+        if ls "${LINUX_RPI_APK_EXTRACT}/boot/kernel*.img" &>/dev/null; then
             local confirm
             read -rp ">>> use cached extracted kernel (boot/)? [y/N]: " confirm
             confirm="${confirm,,}"
@@ -541,7 +549,7 @@ __M.install.setup () {
                 __logger.info "using cached extracted kernel."
             else
                 __logger.info "discarding cache ..."
-                if ! rm -rf "${LINUX_RPI_DIR}/extract/boot"; then
+                if ! rm -rf "${LINUX_RPI_APK_EXTRACT}"; then
                     __logger.error "failed to discard the cache."
                     __M.util.cleanup
                     return 1
@@ -551,7 +559,7 @@ __M.install.setup () {
         else
             __logger.warn "boot/ exists but no kernel*.img found."
             __logger.info "discarding cache ..."
-            if ! rm -rf "${LINUX_RPI_DIR}/extract/boot"; then
+            if ! rm -rf "${LINUX_RPI_APK_EXTRACT}"; then
                 __logger.error "failed to discard the cache."
                 __M.util.cleanup
                 return 1
@@ -559,9 +567,9 @@ __M.install.setup () {
             __logger.info "discarding cache ... done."
         fi
     fi
-    if [[ ! -d "${LINUX_RPI_DIR}/extract/boot" ]]; then
+    if [[ ! -d "${LINUX_RPI_APK_EXTRACT}" ]]; then
         __logger.info "extracting linux-rpi kernel package ..."
-        if ! tar xf "${LINUX_RPI_DIR}/apk/${LINUX_RPI}" -C "${LINUX_RPI_DIR}/extract/"; then
+        if ! tar xf "${LINUX_RPI_APK}" -C "${LINUX_RPI_APK_EXTRACT}"; then
             __logger.error "failed to extract linux-rpi kernel package."
             __M.util.cleanup
             return 1
@@ -569,14 +577,14 @@ __M.install.setup () {
         __logger.info "extracting linux-rpi kernel package ... done."
     fi
     local kernel
-    kernel=$(find "${LINUX_RPI_DIR}/extract/boot" -maxdepth 1 -type f -name "kernel*.img" | head -n1)
+    kernel=$(find "${LINUX_RPI_APK_EXTRACT}/boot" -maxdepth 1 -type f -name "kernel*.img" | head -n1)
     if [[ -z "${kernel}" ]]; then
         __logger.error "no kernel*.img found in extracted linux-rpi kernel package."
         __M.util.cleanup
         return 1
     fi
     __logger.info "copying kernel image ..."
-    if ! sudo cp -rf "${LINUX_RPI_DIR}/extract/boot/*" "${MOUNTPOINT}/boot/"; then
+    if ! sudo cp -rf "${LINUX_RPI_APK_EXTRACT}/boot/*" "${MOUNTPOINT}/boot/"; then
         __logger.error "failed to copy kernel image."
         __M.util.cleanup
         return 1
