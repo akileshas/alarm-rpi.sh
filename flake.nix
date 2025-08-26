@@ -15,12 +15,12 @@
       ];
       perSystem = {pkgs,...}: {
         packages.default = pkgs.writeShellApplication {
-          name="alarm_install";
+          name="alarm-install";
           runtimeInputs = [pkgs.fzf];
           text = builtins.readFile ./build.sh;
         };
         devShells.default = pkgs.mkShell {
-          name="alarm_install-devshell";
+          name="alarm-install-devshell";
           meta.description = "Shell environment for alarm_install script";
           packages = with pkgs;[fzf];
         };
