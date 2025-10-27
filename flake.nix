@@ -29,15 +29,15 @@
     {
       packages = forAllSystems (system: pkgs: {
         default = pkgs.writeShellApplication {
-          name = "alarm";
+          name = "alarm-rpi";
           runtimeInputs = basePkgs pkgs;
           text = builtins.readFile ./run.sh;
         };
       });
       devShells = forAllSystems (system: pkgs: {
         default = pkgs.mkShell {
-          name = "alarm";
-          meta.description = "shell for alarm installer script";
+          name = "alarm-rpi";
+          meta.description = "shell for alarm-rpi installer script";
           packages = basePkgs pkgs ++ [ self.packages.${system}.default ];
         };
       });
