@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 
-bash alarm-rpi.sh "$@"
+bash alarm-rpi.bash "$@"
