@@ -3,10 +3,10 @@
 ### usage (bash)
 
 ```bash
-bash alarm-rpi.sh help              # get help
-bash alarm-rpi.sh check             # check all requirements
-bash alarm-rpi.sh install           # install archlinuxarm
-bash alarm-rpi.sh install --post    # post-install setup
+bash alarm-rpi.bash help              # get help
+bash alarm-rpi.bash check             # check all requirements
+bash alarm-rpi.bash install           # install archlinuxarm
+bash alarm-rpi.bash install --post    # post-install setup
 ```
 
 ### usage (nix)
