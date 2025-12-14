@@ -1,4 +1,5 @@
-# alarm-rpi – ArchlinuxARM installer for Raspberry Pi
+# alarm-rpi
+## ArchlinuxARM installer for Raspberry Pi 5.
 
 ### usage (bash)
 
