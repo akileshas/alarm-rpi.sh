@@ -1,5 +1,7 @@
 # nix build outputs
 .direnv
+result/
+result
 
 ## development environment
 # visual studio code
