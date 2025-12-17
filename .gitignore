@@ -1,0 +1,13 @@
+# nix build outputs
+.direnv
+
+## development environment
+# visual studio code
+.vscode/
+# vim
+.*.sw?
+.sw?
+# emacs
+*~
+\#*\#
+.#*
