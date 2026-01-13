@@ -31,7 +31,7 @@
         default = pkgs.writeShellApplication {
           name = "alarm-rpi";
           runtimeInputs = basePkgs pkgs;
-          text = builtins.readFile ./run.bash;
+          text = builtins.readFile ./run.sh;
         };
       });
       devShells = forAllSystems (system: pkgs: {
