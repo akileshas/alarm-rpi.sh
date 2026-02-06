@@ -247,14 +247,14 @@ __M.checker.sys () {
             return 1
         fi
     fi
-    if __util.is_excluded "paru" "${exclude_list[@]}"; then
-        __logger.warn "\b(paru) check: excluded."
+    if __util.is_excluded "yay" "${exclude_list[@]}"; then
+        __logger.warn "\b(yay) check: excluded."
     else
-        if command -v paru &>/dev/null; then
-            __logger.info "\b(paru) check: passed."
+        if command -v yay &>/dev/null; then
+            __logger.info "\b(yay) check: passed."
         else
-            __logger.err "\b(paru) check: failed."
-            __logger.err "'paru' AUR helper is not installed."
+            __logger.err "\b(yay) check: failed."
+            __logger.err "'yay' AUR helper is not installed."
             return 1
         fi
     fi
@@ -827,8 +827,8 @@ _M.export.sync () {
         __logger.err "failed to synchronize the 'pacman' packages."
         return 1
     fi
-    if ! paru -Syy; then
-        __logger.err "failed to synchronize the 'AUR' packages with 'paru'."
+    if ! yay -Syy; then
+        __logger.err "failed to synchronize the 'AUR' packages with 'yay'."
         return 1
     fi
     __logger.log "synchronizing the system ... done."
@@ -878,9 +878,9 @@ commands:
     init                        initialize system (sync packages and run checks).
     sync                        sync pacman and AUR package databases.
     check [options]             run system and package requirement checks.
-        --only-sys              check only system requirements (arch, user, ping, paru).
+        --only-sys              check only system requirements (arch, user, ping, yay).
         --only-pkgs             check only package requirements and install missing.
-        --exclude=items         exclude checks (comma-separated: 'arch,user,ping,paru,pkgs').
+        --exclude=items         exclude checks (comma-separated: 'arch,user,ping,yay,pkgs').
     install [options]           install archlinux arm to selected disk.
         --setup                 run only main installation process.
         --post                  run only post-installation steps.\n
